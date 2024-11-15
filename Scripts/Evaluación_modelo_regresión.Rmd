@@ -1,0 +1,411 @@
+---
+title: "REGRESSION MODEL EVALUATION"
+author: "JOSÉ LUIS"
+date: "2024-11-14"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    theme: united
+    highlights: espresso
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, comment = NA)
+```
+
+# CÓDIGO {.tabset}
+
+EN ESTE PROYECTO VAMOS A VISUALIZAR DE MANERA EFICIENTE LOS DATOS Y VER COMO HACER UN MODELO DE REGRESIÓN Y EVALUAREMOS EL MODELO A TRAVÉS DE SUS RESIDUOS.
+
+## LIBRERIAS
+```{r}
+library(caret)
+library(dplyr)
+library(ggplot2)
+library(ggthemes)
+library(kableExtra)
+library(psych)
+library(skimr)
+library(tidymodels)
+library(tidyverse)
+library(GGally)
+library(lmtest)
+library(corrplot)
+```
+
+
+## DATASET Y VARIABLES
+
+EL DATASET QUE VAMOS A ESCOGER PARA HACER ESTE PEQUEÑO PROYECTO, ES EL DE mtcars, QUE VIENE DE BASE EN R.
+```{r}
+# Primero observamos un poco el dataset
+data = mtcars
+
+head(data) %>% kable(format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, position = "center", font_size = 12) %>%
+  row_spec(0, background = "#287289", color = "white")
+```
+
+```{r}
+str(data)
+```
+VARIABLES:
+
+**mpg:** Miles per Gallon (Millas por galón)
+
+**Descripción:** Eficiencia de combustible del auto, es decir, el número de millas que el vehículo puede recorrer por cada galón de gasolina.
+
+**Tipo:** Numérica
+
+
+
+
+**cyl:** Cylinders (Cilindrada)
+
+**Descripción:** Número de cilindros del motor del auto. Los autos con más cilindros tienden a tener más potencia, pero suelen ser menos eficientes en cuanto a consumo de combustible.
+
+**Tipo:** Categórica (ordinal)
+
+
+
+
+
+**disp:** Displacement (Desplazamiento del motor)
+
+**Descripción:** Volumen total de los cilindros del motor, medido en pulgadas cúbicas. Un mayor desplazamiento generalmente indica un motor más grande y potente.
+
+**Tipo:** Numérica
+
+
+
+
+**hp:** Horsepower (Caballos de fuerza)
+
+**Descripción:** Potencia del motor medida en caballos de fuerza. Una mayor cantidad de caballos de fuerza usualmente implica mayor rendimiento y velocidad.
+
+**Tipo:** Numérica
+
+
+
+**drat:** Rear Axle Ratio (Relación del eje trasero)
+
+**Descripción:** Relación entre las revoluciones del eje de transmisión trasero y las del motor. Influye en la aceleración y el consumo de combustible.
+
+**Tipo:** Numérica
+
+
+
+**wt:** Weight (Peso)
+
+**Descripción:** Peso del automóvil medido en miles de libras. El peso afecta la eficiencia del combustible y el rendimiento del vehículo.
+
+**Tipo:** Numérica
+
+
+
+**qsec:** 1/4 Mile Time (Tiempo en el cuarto de milla)
+
+**Descripción:** Tiempo en segundos que tarda el auto en recorrer un cuarto de milla (aproximadamente 402 metros). Es una medida de la aceleración del vehículo.
+
+**Tipo:** Numérica
+
+
+
+**vs:** Engine Shape (Tipo de motor)
+
+**Descripción:** Tipo de motor: 0 para motor en línea y 1 para motor en V. Esta variable es categórica.
+
+**Tipo:** Categórica (binaria)
+
+
+
+am: Transmission (Transmisión)
+
+**Descripción:** Tipo de transmisión del auto: 0 para transmisión automática y 1 para transmisión manual.
+
+**Tipo:** Categórica (binaria)
+
+
+
+**gear:** Gears (Número de marchas)
+
+**Descripción:** Número de marchas en la transmisión del vehículo.
+
+**Tipo:** Categórica (ordinal)
+
+
+
+**carb:** Carburetors (Carburadores)
+
+**Descripción:** Número de carburadores del automóvil, un componente que mezcla el aire con el combustible para el motor.
+
+**Tipo:** Numérica
+
+
+
+
+LAS VARIABLES CATEGORICAS EN ESTE DATASET YA ESTÁN CODIFICADAS, POR LO QUE NO HACE FALTA NINGUN PREPROCESAMIENTO DE ESTE ESTILO.
+
+
+
+## ANÁLISIS EXPLORATORIO
+VAMOS A HACER UN PEQUEÑO ANÁLISIS EXPLOTATORIO CON SUMMARY() Y SKIM()
+```{r}
+summary(data)
+```
+```{r}
+skim(data)
+```
+DEJO COMO PROPUESTA INTERPRETAR ESTOS RESULTADOS, YA QUE EL ANÁLISIS PRINCIPAL DE ESTE PROYECTO ES EL MODELO DE REGRESIÓN. SUMMARY() Y SKIM() LOS HE USADO PARA DAR OPCIONES A LA HORA DE HACER UN ANÁLISIS EXPLORATORIO COMPLETO Y SENCILLO EN POCO TIEMPO. 
+
+
+## VISUALIZACIÓN DE DATOS {.tabset}
+
+PARA LA VISUALIZACIÓN DE LOS DATOS, UTILIZAREMOS VARIOS GRÁFICOS CLÁSICOS Y OTROS UN POCO MÁS COMPLEJOS QUE NOS DARÁN MÁS INFORMACIÓN DE NUESTROS DATOS
+
+### GRAFICOS CLÁSICOS
+
+BOXPLOT
+```{r}
+# Cogemos las variables numericas
+variables_numericas = data %>%
+  select(where(is.numeric))
+
+# Hacemos un boxplot sencillo
+for (var in colnames(variables_numericas)) {
+  if (var != "mpg") {
+    g = ggplot(data, aes(x = mpg, y = variables_numericas[[var]], col = mpg)) +
+      geom_boxplot(fill = "lightblue", color = "darkblue", outlier.shape = 16, outlier.size = 2, outlier.colour = "red", alpha = 0.7) +
+      theme_minimal() +
+      labs(x = "mpg", y = var) +
+      ggtitle(paste("Boxplot de", var, "vs mpg"))
+  
+  print(g)
+  } 
+}
+```
+
+ESTE BOXPLOT NOS PUEDE AYUDAR A VER LA MEDIA, MAXIMOS, MINIMOS, ETC PERO REALMENTE NO ES MUY INFORMATIVO PERSÉ, YA QUE ESTO TAMBIEN LO PODEMOS OBTENER CON UN SUMMARY() O SKIM() AUNQUE ES CIERTO QUE AQUI ESTAMOS ENFRENTANDO CADA VARIABLE CON LA VARIABLE TARGET "mpg". LOS PUNTOS ROJOS HACEN REFERENCIA A POSIBLES OUTLIERS.
+
+
+VIOLIN PLOT
+```{r}
+# Cogemos las variables numericas
+variables_numericas = data %>%
+  select(where(is.numeric))
+
+# Hacemos un Violin plot sencillo
+for (var in colnames(variables_numericas)) {
+  if (var != "mpg") {
+    g = ggplot(data, aes(x = mpg, y = variables_numericas[[var]], col = mpg)) +
+      geom_violin(fill = "lightgreen", color = "darkgreen", alpha = 0.5, trim = TRUE, adjust = 1.2) +
+      theme_minimal() +
+      labs(x = "mpg", y = var) +
+      ggtitle(paste("Boxplot de", var, "vs mpg"))
+  
+  print(g)
+  }  
+}
+```
+
+LOS VIOLIN PLOT SIRVEN MÁS PARA VER DONDE HAY MÁS DENSIDAD DE LOS DATOS. CUANTO MÁS ANCHO, MÁS CONCENTRACIÓN DE DATOS HAY
+
+GRÁFICO DE DISPERSION
+```{r}
+
+# Hacemos un gráfico de dispersion con línea de regresión
+for (var in colnames(variables_numericas)) {
+  if (var != "mpg") {
+    g = ggplot(data, aes(x = mpg, y = variables_numericas[[var]], col = mpg)) +
+      geom_point(size = 3, alpha = 0.7) +  # Puntos del scatter plot
+      geom_smooth(method = "lm", se = FALSE, color = "red") +  # Línea de regresión lineal (sin intervalo de confianza)
+      theme_minimal() +
+      labs(x = "mpg", y = var) +  # Etiquetas de los ejes
+      ggtitle(paste("Scatter plot de", var, "vs mpg"))  # Título del gráfico
+
+    print(g)
+  } 
+}
+
+
+
+```
+
+EL GRÁFICO DE DISPERSIÓN ES EL MEJOR GRÁFICO SI LO QUE BUSCAMOS ES VER COMO ES LA RELACIÓN ENTRE VARIABLES (LINEAL, LOGISTICA, HIPERBÓLICA, ETC). EVIDENTEMENTE, PARA LAS VARIABLES CATEGORICAS LA RELACIÓN NO VA A SER LINEAL, COMO SE MUESTRA EN LOS GRÁFICOS PARA "cyl", "vs", "am", "gear" o "carb" PORQUE SON NIVELES. EN LAS VARIABLES NUMÉRICAS, POR OTRO LADO, SI QUE SE PUEDE VER CIERTA TENDENCIA LINEAL (YA SEA POSITIVA O NEGATIVA). 
+
+VAMOS A HACER UNA MATRIZ DE CORRELACIÓN PARA OBSERVAR ALGO MEJOR LA RELACIÓN ENTRE LAS VARIABLES PREDICTORAS ENTRE SI Y CON LA TARGET.
+```{r}
+# Calcular la matriz de correlación
+cor_matrix = cor(variables_numericas)
+
+# Mostrar la matriz de correlación
+print(cor_matrix)
+
+# Visualizar la matriz de correlación con corrplot
+corrplot(cor_matrix, method = "circle", type = "upper", 
+         tl.col = "black", tl.srt = 45, # Ajustar la orientación de los nombres de las variables
+         diag = FALSE) # Opcional: eliminar la diagonal (ya que siempre es 1)
+```
+
+ESTA MATRIZ DE MUY INTUITIVA PUES, A MAYOR TAMAÑO DE CIRCULO Y DE INTENSIDAD DE COLOR, LA RELACIÓN ENTRE EL PAR DE VARIABLES SERÁ MAYOR (ROJO = CORRELACIÓN NEGATIVA; AZUL = CORRELACIÓN NEGATIVA; BLANCO = INCORRELACIÓN)
+
+SE DEJA PARA LAS PERSONAS QUE VEAN ESTE PROYECTO QUE SAQUEN SUS PROPIAS RELACIONES ENTRE LAS VARIABLES.
+
+
+## CONSTRUCCIÓN MODELO DE REGRESIÓN Y ELECCIÓN DE VARIABLES
+
+ESTE DATASET ESTÁ MUY PREPARADO PARA QUE HAGAMOS UN MODELO LINEAL Y YA. PERO ESE NO ES NUESTRO OBJETIVO, YA QUE ESCRIBIR UN PAR DE LINEAS DE CÓDIGO LO PUEDE HACER TODO EL MUNDO. CUANDO NOSOTROS TENEMOS UN DATASET PROPIO, TODO EL ANÁLISIS PREVIO NOS SIRVE PARA VER QUE VARIABLES SON LAS QUE MÁS PODRÍAN CONTRIBUIR A LA VARIABLE TARGET "mpg" (EN ESTE CASO). A LA HORA DE CONSTRUIR NUESTRO MODELO, ENTONCES, ¿QUE VARIABLES ESCOGEMOS Y CUALES NO? BIEN, PODRIAMOS, PRIMERO, DE LA MATRIZ DE CORRELACIÓN ANTERIOR, ANALIZAR CUALES ESTÁN ALTAMENTE CORRELACIONADAS Y, SIMPLEMENTE, NO AÑADIRLAS A NUESTRO MODELO. CUANDO TENEMOS MUCHAS VARIABLES, PROBABLEMENTE ESTE MÉTODO NOS QUITE BASTANTE TRABAJO. SIN EMBARGO, ESTAMOS ANTE UN DATASET PEQUEÑO, POR LO QUE PODRIAMOS HACER LO QUE SE CONOCE COMO **SELECCIÓN HACIA DELANTE** O **FORWARD SELECTION** QUE CONSISTE EN CONSTRUIR NUESTRO MODELO, AÑADIENDO VARIABLE DE UNA EN UNA Y, ESCOGIENDO DE ENTRE TODOS ELLOS, EL MODELO QUE TENGA UN R^2 MÁS ALTO, QUE ES EL PARÁMETRO QUE NOS INDICA COMO DE BUENO ES UN MODELO. EXISTE TAMBIÉN LA **ELIMINACIÓN HACIA ATRÁS** O **BACKWARD ELIMINATION** QUE ES TODO LO CONTRARIO, EMPEZAR EL MODELO CON TODAS LAS VARIABLES E IR ELIMINANDO SEGÚN LAS QUE MENOS VAYAN CONTRIBUYENDO HASTA QUEDARNOS CON EL MODELO QUE TENGA EL R^2 MÁS ALTO. EN NUESTRO CASO, UTILIZAREMOS EL **FORWARD SELECTION**
+
+YO SIEMPRE ACONSEJO AQUI, PONER UN colnames() PARA TENER EL NOMBRE DE NUESTRAS VARIABLES Y NO TENER QUE MIRARLAS ARRIBA DE NUESTRO SCRIPT.
+```{r}
+colnames(data)
+```
+
+```{r}
+modelo = lm(mpg ~ cyl, data = data)
+summary(modelo)
+```
+OBSERVAMOS QUE DE POR SI, CON SOLO ESTA VARIABLE YA TENEMOS UN R^2 DE 0.72, LO CUAL ES BASTANTE ALTO. ADEMÁS, EL P-VALOR ASOCIADO ES MUY SIGNIFICATIVO, POR LO QUE CONCLUIMOS QUE ESTA VARIABLE ES UNA GRAN PREDICTORA Y LA TENEMOS QUE CONSERVAR. AHORA HAGAMOS MÁS MODELOS AÑADIENDO MÁS VARIABLE
+
+```{r}
+modelo_2 = lm(mpg ~ cyl + disp, data = data)
+summary(modelo_2)
+```
+
+PODEMOS OBSERVAR QUE EL R^2 A AUMENTADO A 0.76, PERO AHORA NUESTRA VARIABLE cyl YA NO ES TAN SIGNIFICATIVA COMO ANTES. ¿ESTO POR QUÉ ES? PUES ESTO SE DEBE A COMO INTERACTUAN LAS VARIABLES ENTRE SI. SI ESTAS ESTÁN MÁS CORRELACIONADAS, PUEDE OCURRIR EL FENOMENO DE MULTICOLINEALIDAD. POR ESO ANTES DECÍA QUE ES IMPRESCINDIBLE VER SI NUESTRAS VARIABLES ESTAN CORRELACIONADAS O NO. SIN EMBARGO, EL R^2 ES MÁS ALTO QUE EL ANTERIOR, POR LO QUE NO VAMOS A DESECHAR NINGUNA VARIABLE. SIGAMOS
+
+```{r}
+modelo_3 = lm(mpg ~ cyl + disp + hp, data = data)
+summary(modelo_3)
+```
+
+```{r}
+modelo_4 = lm(mpg ~ cyl + disp + hp + drat, data = data)
+summary(modelo_4)
+```
+```{r}
+modelo_5 = lm(mpg ~ cyl + disp + hp + drat + wt, data = data)
+summary(modelo_5)
+```
+wt HA MEJORADO SIGNIFICATIVAMENTE NUESTRO R^2 QUE AHORA ES DE 0.85. ADEMÁS ES BASTANTE SIGNIFICATIVO EN SU P-VALOR.
+
+```{r}
+modelo_6 = lm(mpg ~ cyl + disp + hp + drat + wt + qsec, data = data)
+summary(modelo_6)
+```
+Aunque los aumentos no son significativos, observamos que el R^2 sigue aumentando, por lo que las variables están contribuyendo a que mejore el modelo de regresión.
+
+```{r}
+modelo_7 = lm(mpg ~ cyl + disp + hp + drat + wt + qsec + vs, data = data)
+summary(modelo_7)
+```
+PODRIAMOS PERFECTAMENTE QUITAR TANTO qsec y vs PUES NO NOS ESTÁN DANDO UNA MEJORA NADA NOTABLE, PERO NO LO VAMOS A HACER PORQUE SI EN REALIDAD EL MODELO LO ESTÁ EXPLICANDO MEJOR A TRAVÉS DE LA ADICIÓN DE ESTAS VARIABLES, NO HAY RAZÓN PARA QUITARLAS. ADEMÁS QUITARLAS PODRIA HACER QUE AL INTRODUCIR OTRAS VARIABLES, EL MODELO EMPEORE. SOLO QUITAREMOS VARIABLES SI ESA VARIABLE HACE QUE EL MODELO EMPEORE.
+
+```{r}
+modelo_8 = lm(mpg ~ cyl + disp + hp + drat + wt + qsec + vs + am, data = data)
+summary(modelo_8)
+```
+
+
+```{r}
+modelo_9 = lm(mpg ~ cyl + disp + hp + drat + wt + qsec + vs + am + gear, data = data)
+summary(modelo_9)
+```
+
+```{r}
+modelo_10 = lm(mpg ~ cyl + disp + hp + drat + wt + qsec + vs + am + gear + carb, data = data)
+summary(modelo_10)
+```
+COMO VEMOS, TODAS LAS VARIABLES CONTRIBUYEN POSITIVAMENTE AUNQUE HAYA CIERTA CORRELACIÓN ENTRE LAS VARIABLES. NO OBSTANTE, HAY UN ASPECTO IMPORTANTE A CONSIDERAR, Y ES QUE ES MODELO DE REGRESIÓN ES UN MODELO DE REGRESION **LINEAL**. ENTONCES UNA DE SUS CARACTERISTICAS ES LA LINEALIDAD, CARACTERISTICA QUE SABEMOS QUE NO TODAS LAS VARIABLES NO CUMPLEN. ¿CUALES SON ESTAS VARIABLES? PUES LAS CATEGORICAS, YA QUE ESTÁN POSEEN NIVELES Y, NUNCA VAN A SEGUIR UNA RELACIÓN LINEAL. DE ESTE MODO, NUESTRO MODELO FINAL QUEDARÁ ASI:
+
+```{r}
+colnames(data)
+```
+
+```{r}
+modelo_final = lm(mpg ~ disp + hp + drat + wt + qsec + carb, data = data)
+summary(modelo_final)
+```
+
+SI NOS DAMOS CUENTA, NO HEMOS PERDIDO APENAS R^2 Y NOS HEMOS QUEDADO CON LAS VARIABLES NUMERICAS QUE SON LAS IMPORTANTES. AHORA VAMOS A EVALUARLO.
+
+## EVALUACIÓN MODELO DE REGRESIÓN
+
+
+LOS MODELOS DE REGRESIÓN LINEAL, DEBEN DE CUMPLIR UNA SERIE DE SUPUESTOS PARA QUE SEAN BUENOS Y FIABLES, COMO:
+
+**linealidad:** El modelo asume que hay una relación lineal entre las variables independientes y la variable dependiente.
+
+**Independencia de los errores:** Los residuos deben ser independientes entre sí, es decir, no debe haber autocorrelación (especialmente importante en series temporales).
+
+**Homocedasticidad:** La varianza de los errores debe ser constante en todo el rango de valores de la variable dependiente. En otras palabras, los residuos no deben mostrar patrones sistemáticos y deben tener una dispersión uniforme.
+
+**Distribución normal de los residuos:** Los residuos deben seguir una distribución normal. Esto es especialmente importante para la validez de los intervalos de confianza y los tests de hipótesis.
+
+**No Multicolinealidad:** Las variables independientes no deben estar fuertemente correlacionadas entre sí, ya que esto puede distorsionar las estimaciones de los coeficientes y dificultar la interpretación del modelo. Recalcar lo de FUERTEMENTE correlacionadas entre si.
+
+
+
+VAMOS A IR COMPROBANDO CADA UNO DE ESTOS SUPUESTOS PARA VER LA FIABILIDAD DE ESTE MODELO.
+
+LINEALIDAD Y HOMOCEDASTICIDAD
+
+PARA ELLO, HAREMOS UN GRÁFICO DE RESIDUOS VS AJUSTADOS. AUNQUE EN REALIDAD YA HAYAMOS VISTO EN LOS GRÁFICOS DE DISPERSIÓN QUE HAY UNA CLARA LINEALIDAD ENTRE LAS VARIABLES NUMERICAS Y LA VARIABLE TARGET, ESTA PRUEBA ES DE FUEGO PARA LA LINEALIDAD Y HOMOCEDASTICIDAD.
+```{r}
+# Linealidad
+
+# Gráfico de residuos vs valores ajustados
+plot(modelo_final$fitted.values, modelo_final$residuals, 
+     main = "Residuos vs Valores Ajustados", 
+     xlab = "Valores Ajustados", 
+     ylab = "Residuos", 
+     pch = 19, col = "darkgreen")
+abline(h = 0, col = "red")  # Línea horizontal en 0
+```
+
+PARA INTERPRETAR ESTE GRÁFICO, TENEMOS QUE VER COMO SE DISPONEN LOS PUNTOS VERDES. SI ESTOS FORMAN ALGÚN PATRON SOBRE LA LINEA ROJA (COMO UNA U), PODRIA INDICAR QUE LA RELACIÓN NO ES LINEAL Y HETEROCEDASTICIDAD. SIN EMBARGO, VEMOS QUE NO HAY PATRÓN Y QUE LOS RESIDUOS SE DISPONEN DE FORMA ALEATORIA, POR LO QUE EL SUPUESTO DE LINEALIDAD Y HOMOCEDASTICIDAD, SE CUMPLEN.
+
+
+INDEPENDENCIA DE LOS ERRORES
+
+PARA ESTE SUPUESTO, HACEMOS EL TEST DE DURBIN WATSON
+```{r}
+# test de Durbin Watson
+dwtest(modelo_final)
+```
+
+ESTE TEST MIDE LA INDEPENDENCIA DE LOS RESIDUOS. SI EL TEST DA UN VALOR CERCANO A 2, SON INDEPENDIENTES. ESTE ES EL CASO DE NUESTRO MODELO, POR LO QUE SE CUMPLE EL SUPUESTO DE INDEPENDENCIA.
+
+
+NORMALIDAD
+
+PARA EL SUPUESTO DE NORMALIDAD, PODEMOS USAR UN GRÁFICO Q-Q DE LOS RESIDUOS O UN TEST SHAPIRO-WILK PARA ELLO. HAGAMOS LOS DOS
+```{r}
+# Gráfico Q-Q
+qqnorm(modelo_final$residuals)
+qqline(modelo_final$residuals, col = "red")
+
+# Shapiro-Wilk test
+shapiro.test(modelo_final$residuals)
+```
+
+PARA INTERPRETAR EL GRÁFICO Q-Q, SOLO TENEMOS QUE FIJARNOS EN SI LOS PUNTOS SIGUEN LA LINEA. EN ESTE CASO, POR NORMAL GENERAL LOS SIGUEN SALVO CIERTOS PUNTOS EN LA PARTE DE ARRIBA. ESTOS PODRÍAN TRATARSE DE OUTLIERS Y HABRÍA QUE VER COMO SE TRATAN. 
+
+POR OTRO LADO, EL TEST DE SHAPIRO-WILK, ES UN SIMPLE TEST QUE NOS DICE SI LA DISTRIBUCIÓN, EN ESTE CASO DE LOS RESIDUOS, ES NORMAL O NO. SI EL P-VALOR ES <0.05 PODRIAMOS ESTAR ANTE UNA DISTRIBUCIÓN NO NORMAL. EN ESTE CASO, EL P-VALOR ES DE 0.03971, POR LO QUE SE RECHAZA ESTE SUPUESTO. NO OBSTANTE, ESTE SUPUESTO ES RECHAZADO, JUNTO CON UN GRAFICO Q-Q UN TANTO PECULIAR, DEBIDO A LOS POSIBLES OUTLIERS QUE HAY. ES POR ESO QUE DEBERIAMOS PLANTEARNOS EL QUITARLOS PARA VER SI NUESTRO MODELO MEJORA. SE DEJA COMO COLABORACIÓN PARA QUIEN LO QUIERA!
+
+
+MULTICOLINEALIDAD
+
+PARA LA MULTICOLINEALIDAD, USAREMOS DE INDICE DE DE VARIANZA DE LA INFLACIÓN (VIF), de la libreria car
+```{r}
+library(car)
+vif(modelo_final)
+```
+
+SI EL VIF ES MAYOR A 10, HAY MULTICOLINEALIDAD, CONFORME MÁS SE ACERQUE A 1, MENOR SERÁ. PODEMOS OBSERVAR COMO DOS DE LAS VARIABLES, **disp** y **wt** TIENEN UN VIF MAYOR A 10. ESTO JUNTO A LOS OUTLIERS PODRIAN SER LOS CAUSANTE DE QUE ESTE MODELO LINEAL NO SEA EL MEJOR DEL MUNDO. ¿ESTO QUIERE DECIR QUE TODO EL TRABAJO QUE HEMOS HECHO HASTA AHORA NO SIRVA DE NADA? ROTUNDAMENTE NO. ESTO NOS SIRVE PRECISAMENTE PARA VER QUE VARIABLES O TRATAMIENTOS DE VALORES DEBEMOS HACER PARA CONSTRUIR UN MODELO QUE DE VERDAD EXPLIQUE BIEN LA VARIABLE TARGET Y QUE TENGA UN R^2 ACEPTABLE.
+
+
+CREO QUE ES UNA BUENA CONCLUSIÓN PARA DEJAR EL PROYECTO AQUI. ME GUSTARIA QUE TODO AQUEL QUE LEA ESTO, INTENTARA HACER LOS CAMBIOS QUE CONSIDERE OPORTUNOS Y ME HAGA FEEDBACK CON SUS PROPIOS ANÁLISIS. GRACIAS!
