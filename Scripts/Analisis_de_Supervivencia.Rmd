@@ -1,0 +1,544 @@
+---
+title: "ANÁLISIS DE SUPERVIVENCIA"
+author: "José Luis"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    theme: united
+    highlights: espresso
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+# CODIGO {.tabset}
+
+## LIBRERIAS
+
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(kableExtra)
+library(survival)
+library(survminer)
+```
+
+## DATASET
+
+
+```{r}
+#Cargamos el conjunto de datos lung del paquete survminer
+data("lung", package = "survminer")
+
+#Asignamos los datos a una nueva variable llamada df
+df = lung
+
+head(df) %>% kable(format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, position = "center", font_size = 12) %>%
+  row_spec(0, background = "#287289", color = "white")
+```
+
+Variables de estudio:
+
+-inst: codigo institucional --> Para mantener el anonimato de los pacientes. Se eliminará posteriormente pues no es importante para los análisis.
+
+-time: tiempo de supervivencia (días) --> Podemos dejarlo asi o cambiarlo a meses, depende del estudio, de lo que se pida, etc.
+
+-status: 
+  - 1 = censurado (todo lo que no es muerte)
+  - 2 = muerte
+
+age: edad (años)
+
+sex = género
+  - 1 = varón
+  - 2 = mujer
+  
+-ph.ecog: escala ECOG. La escala ECOG es una forma práctica de medir la calidad de vida de un paciente oncológico, cuyas expectativas de vida cambian en el transcurso de meses, semanas e incluso días. Fue diseñada por el Eastern Cooperative Oncology Group (ECOG) de Estados Unidos y validada por la Organizacion Mundial De La Salud (OMS). Se publicó en 1982 por Oken et al. También se llama a la escala ECOG escala WHO o Zubrod score.
+
+  + 0 = asintomático.
+  + 1 = sintomático pero completamente ambulatorio.
+  + 2 = en cama < 50% del día.
+  + 3 = en cama > 50% del día.
+  + 4 = postrado en cama.
+
+- ph.karno: puntuacion de rendimiento de Karnofsky (malo = 0, bueno = 100) según el médico.
+- pat.karno: puntuación de rendimiento de Karnofsky según el paciente.
+- meal.cal: calorias consumidas por las comidas.
+- wt.loss: pérdida de peso en los últimos 6 meses (libras).
+
+
+Primero, antes de nada, eliminamos la variable inst pues no nos servirá al ser un simple identificador
+```{r}
+df["inst"] = NULL
+```
+
+Vamos a observar un poco la estructura de nuestro dataset, como son los datos y de que tipo, para ver si debemos hacer cambios
+```{r}
+str(df)
+```
+
+
+Por consenso, la variable status, que suele ser aquella que queremos estudiar, pues nos indica si el paciente presenta o no la enfermedad, o si está muerto, etc suele ser 0 = censurado (sería como en una distribución de Bernoulli el fracaso) y 1 = muerte / enfermedad, etc (que es lo que sería en una distribución de Bernoulli el éxito). En este dataset, viene como 1 y 2, respectivamente. Entonces, la mutamos para cambiar el 2 (muerto) por 1 y el 1 (censurado) por el 0 
+```{r}
+df = df %>%
+  mutate(
+    status = as.numeric(dplyr::recode(status, '1' = '0', '2' = '1'))
+         )
+```
+
+
+Cambiamos sex y ph.ecog a variables categoricas
+```{r}
+category_cols = c("sex",
+                  "ph.ecog")
+
+for(col in category_cols) {
+  df[[col]] = as.factor(df[[col]])
+}
+```
+
+
+Esto va a depender del estudio, pero en mi caso voy a pasar los días a meses diviendiendo por 30 (hacemos como si los meses tuvieran todos 30 días aunque sepamos que no es así).
+```{r}
+df$time_en_meses = df$time / 30
+```
+
+
+Para saber cuanto duró el estudio, podemos coger el valor maximo de df$time_en_meses (esto nos servirá para dividir luego el estudio según nos convenga)
+```{r}
+max(df$time_en_meses)
+```
+Podemos ver que el estudio duró casi 3 años.
+
+## MODELO KAPAN-MEIER PARA LA SUPERVIVENCIA {.tabset}
+
+### GLOBAL SURVIVAL
+```{r}
+#Creamos un objeto de supervivencia para trabajar con él
+surv_obj = Surv(time = df$time_en_meses,
+                event = df$status)
+
+#Ajustaos el modelo de Kaplan-Meier
+fit = survfit(surv_obj ~ 1, #Aquí el uno representa que estamos cogiendo el global, sin hacer distinción de grupos
+              data = df)
+
+# Generamos un grafico Kaplan-Meir
+g = ggsurvplot(fit,
+               data = df,
+               pval = FALSE, # No enseña el p-value
+               conf.int = FALSE,  # No enseña los intervalos de confianza
+               ggtheme = theme_bw(), # Usa un tema con fondo blanco
+               palette = c("#9370db"),
+               title = "Global Survival",
+               xlab = "Months",
+               ylab = "Survival Probability",
+               xlim = c(0, max(df$time_en_meses)))
+
+#Añadimos lineas verticales en los meses 0, 3, 6, 12 y 24
+g$plot = g$plot +
+  geom_vline(xintercept = 0, color = "#7c7c7c", linetype = "dotted") + 
+  geom_vline(xintercept = 3, color = "#7c7c7c", linetype = "dotted") + 
+  geom_vline(xintercept = 6, color = "#7c7c7c", linetype = "dotted") + 
+  geom_vline(xintercept = 12, color = "#7c7c7c", linetype = "dotted") + 
+  geom_vline(xintercept = 24, color = "#7c7c7c", linetype = "dotted") 
+
+g$plot = g$plot + scale_x_continuous(
+  breaks = seq(from = 0, to = max(df$time_en_meses), by = 3),
+  expand = c(0,0) # Eliminar la expansion del eje x
+)
+
+g
+```
+
+
+En este gráfico lo que podemos observar es como la probabilidad de supervivencia cambia conforme avanza la enfermedad (como podría ser un cáncer). Al prinicpio la probabilidad de supervivencia es de 1, pero vemos como rapidamente cae hasta casi el 0.10 tras el mes 33.
+
+
+Ahora lo que vamos a hacer es dividir este gráfico por meses, de manera que podremos observar la probabilidad de supervivencia cada x meses, el número de muertos y vivos que quedan, etc. 
+```{r}
+# Especificamos los tiempos de interés
+times = seq(from = 0, to = max(df$time_en_meses), by = 3)
+
+#Obtenemos el summary para esos tiempos especificos
+summary_fit = summary(fit,
+                      times = times)
+
+#Convertimos el summary a un dataframe
+df_summary = data.frame(
+  time = summary_fit$time,
+  n.risk = summary_fit$n.risk,
+  n.event = summary_fit$n.event,
+  survival = round(summary_fit$surv, 2),
+  lower = round(summary_fit$lower, 2),
+  upper = round(summary_fit$upper, 2)
+)
+
+df_summary %>% kable(format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, position = "center", font_size = 12) %>%
+  column_spec(1, bold = TRUE, color = "#6B3CD4") %>%
+  row_spec(0, background = "#287289", color = "white")
+```
+
+
+Aclaración de que es cada una de las cosas del summary
+
+- time: tiempo de observación.
+- n.risk: número de sujetos en riesgo.
+- n.event: número de sujetos que presentaron el evento (muerte).
+- survival: estimación de la función de supervivencia.
+- lower y upper CI: intervalos de confianza para la estimación
+
+### SURVIVAL BY SEX
+```{r}
+#Creamos un objeto de supervivencia para trabajar con él
+surv_obj = Surv(time = df$time_en_meses,
+                event = df$status)
+
+#Ajustaos el modelo de Kaplan-Meier
+fit = survfit(surv_obj ~ sex, 
+              data = df)
+
+# Generamos un grafico Kaplan-Meir
+g = ggsurvplot(fit,
+               data = df,
+               pval = FALSE, # No enseña el p-value
+               conf.int = FALSE, # No enseña los intervalos de confianza
+               legend.title = "Sex",
+               legend.labs = levels(df$sex),
+               ggtheme = theme_bw(), # Usa un tema con fondo blanco
+               palette = c("#9370db", "#5463db"),
+               title = "Survival by sex",
+               xlab = "Months",
+               ylab = "Survival Probability",
+               xlim = c(0, max(df$time_en_meses)))
+
+g$plot = g$plot +
+  geom_vline(xintercept = 0, color = "#7c7c7c", linetype = "dotted") + 
+  geom_vline(xintercept = 3, color = "#7c7c7c", linetype = "dotted") + 
+  geom_vline(xintercept = 6, color = "#7c7c7c", linetype = "dotted") + 
+  geom_vline(xintercept = 12, color = "#7c7c7c", linetype = "dotted") + 
+  geom_vline(xintercept = 24, color = "#7c7c7c", linetype = "dotted") 
+
+g$plot = g$plot + scale_x_continuous(
+  breaks = seq(from = 0, to = max(df$time_en_meses), by = 3),
+  expand = c(0,0) # Eliminar la expansion del eje x
+)
+
+g
+```
+
+
+Este gráfico muestra la supervivencia a lo largo de los 34 meses pero por sexo. Además, si nos fijamos, podemos ver una serie de lineas dispuestas verticalmente en unos meses, esto nos sirve para remarcar en esos meses la progresión del evento (muerte) y la probabilidad de supervivencia asociada conforme avanza el tiempo. No obstante, en este gráfico no podemos ver cual es el sexo masculino y femenino, pues solo hemos hecho un fit ~ sex pero sin especificar etiquetas, que es lo que haremos a continuación.
+
+```{r}
+#Nos aseguramos de que la variable 'sex' sea un factor y además le añadimos la etiqueta de "varon" y "mujer"
+df$sex = factor(df$sex,
+                levels = c(1, 2),
+                labels = c("Varón", "Mujer"))
+
+#Ahora, creamos un objeto de supervivencia para trabajar con él
+surv_obj = Surv(time = df$time_en_meses,
+                event = df$status)
+
+#Ajustaos el modelo de Kaplan-Meier
+fit = survfit(surv_obj ~ sex, 
+              data = df)
+
+# Generamos un grafico Kaplan-Meir
+g = ggsurvplot(fit,
+               data = df,
+               pval = FALSE, # No enseña el p-value
+               conf.int = FALSE, # No enseña los intervalos de confianza
+               legend.title = "Sex",
+               legend.labs = levels(df$sex),
+               ggtheme = theme_bw(), # Usa un tema con fondo blanco
+               palette = c("#9370db", "#5463db"),
+               title = "Survival by sex",
+               xlab = "Months",
+               ylab = "Survival Probability",
+               xlim = c(0, max(df$time_en_meses)))
+
+g$plot = g$plot +
+  geom_vline(xintercept = 0, color = "#7c7c7c", linetype = "dotted") + 
+  geom_vline(xintercept = 3, color = "#7c7c7c", linetype = "dotted") + 
+  geom_vline(xintercept = 6, color = "#7c7c7c", linetype = "dotted") + 
+  geom_vline(xintercept = 12, color = "#7c7c7c", linetype = "dotted") + 
+  geom_vline(xintercept = 24, color = "#7c7c7c", linetype = "dotted") 
+
+g$plot = g$plot + scale_x_continuous(
+  breaks = seq(from = 0, to = max(df$time_en_meses), by = 3),
+  expand = c(0,0) # Eliminar la expansion del eje x
+)
+
+g
+```
+
+
+En este gráfico ya si que podemos ver la probabilidad de supervivencia según el sexo. Y parece bastante evidente que los hombres, a lo largo de todo el estudio, tienen menos probabilidad de sobrevivir conforme avanza la enfermedad.
+
+Hacemos lo mismo que con el summary de la supervivencia global pero para cada sexo, serían dos summaries en total. Para hacerlo todo más sencillo, hacemos un bucle que nos itere cada summary.
+```{r results='asis'}
+#Especificar tiempo de interés
+times = seq(from = 0, to = max(df$time_en_meses), by = 3)
+
+#Inicializamos listas para almacenar los dataframes
+df_summary_list = list()
+
+#Iteramos sobre cada grupo de Sex y almacenamos los resultados en una lista
+for(grupo in levels(df$sex)) {
+  #Filtramos los datos
+  df_filtered = df[df$sex == grupo, ]
+  
+  #Creamos el objeto de supervivencia
+  surv_obj_filtered = Surv(time = df_filtered$time_en_meses,
+                event = df_filtered$status)
+  #Ajustaos el modelo de Kaplan-Meier
+  fit_filtered = survfit(surv_obj_filtered ~ 1, 
+                data = df_filtered)
+  #Obtenemos el summary para esos tiempos especificos
+  summary_fit = summary(fit_filtered,
+                      times = times)
+
+  #Convertimos el summary a un dataframe y agregamos la columna del grupo NLR
+  df_summary = data.frame(
+    time = summary_fit$time,
+    n.risk = summary_fit$n.risk,
+    n.event = summary_fit$n.event,
+    survival = round(summary_fit$surv, 2),
+    lower_95_CI = round(summary_fit$lower, 2),
+    upper_95_CI = round(summary_fit$upper, 2)
+  )
+  
+  #Lo almacenamos en una lista
+  df_summary_list[[grupo]] = df_summary
+}
+
+#Creamos y mostramos las tablas para cada grupo
+for (i in 1:length(df_summary_list)) {
+  cat("Tabla de supervivencia para Sex:", names(df_summary_list)[i], "\n\n")
+  
+  kable(df_summary_list[[i]], format = "html") %>%
+    kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                  full_width =  FALSE,
+                  position = "center",
+                  font_size = 12) %>%
+    column_spec(1, bold = TRUE, color = "#6B3CD4") %>%
+    row_spec(0, background = "#287289", color = "white") %>%
+    print()
+  
+    cat("\n\n") #Espacio entre tablas
+
+}
+
+```
+
+
+Esta tabla muestra lo mismo que la de la supervivencia global pero ahora dividida por sexos. 
+
+
+Ahora que tenemos la curva para cada sexo, queremos ver si la diferencia en estas curvas son estadísticamente significativas. Para ello, debemos  obtener la mediana de supervivencia de cada grupo en un análisis de Kaplan-Meier, que puede extraerse directamente del objeto de ajuste del modelo de Kaplan-Meier (sirvfit). La mediana de supervivencia es el tiempo en el cual la función de supervivencia cruza el 50% (0.5), es decir, el tiempo en que la mitad de los individuos del grupo han experimentado el evento (por ejemplo, muerte). En algunos casos, puede que no haya una mediana si la función de supervivencia no cruza el 50%
+```{r}
+#Calcular e imprimir la mediana de supervivencia para cada grupo
+for(grupo in levels(df$sex)) {
+  #Filtramos los datos
+  df_filtered = df[df$sex == grupo, ]
+  
+  #Creamos el objeto de supervivencia
+  surv_obj_filtered = Surv(time = df_filtered$time_en_meses,
+                           event = df_filtered$status)
+  
+  #Ajustaos el modelo de Kaplan-Meier
+  fit_filtered = survfit(surv_obj_filtered ~ 1, 
+                         data = df_filtered)
+  
+  #Calculamos la mediana de supervivencia
+  mediana_surv = quantile(fit_filtered, probs = 0.5)
+
+  #Accedemos al valor de la mediana de la lista y lo almacenamos en una variable
+  mediana_valor = mediana_surv[[1]]
+  
+  #Comprobamos si la mediana es NA y ajustamos el mensaje de salida
+  mensaje_mediana = ifelse(is.na(mediana_valor),
+                           "NA (la mediana de supervivencia no se alcanza)",
+                           paste(mediana_valor, "meses"))
+  
+  #Imprimimos la mediana de supervivencia
+  cat("Mediana de supervivencia para el grupo", grupo, ": ", mensaje_mediana, "\n")
+}
+```
+
+
+La mediana de los tiempos de supervivencia para el sex = 1 (varones) es de 9 meses, frente a los 14.2 meses para el sex = 2 (mujeres). Parece haber una ventaja de supervivencia para las mujeres con cáncer de pulmón en comparación con los hombres. Sin embargo, para evaluar si esta diferencia es estadísticamente significativa se requiere un test estadístico.
+
+### PRUEBA DE HIPÓTESIS PARA COMPARAR DOS O MÁS FUNCIONES DE SUPERVIVENCIA: LOG-RANK
+
+Para comprobar distribuciones de supervivencia, utilizamos la prueba del logaritmo del rango Log-Rank con la funcion survdiff, donde:
+
+- N: número de sujetos en cada grupo
+- Observed: número observado ponderado de eventos en cada grupo
+- Expected: el número esperado ponderado de eventos en cada grupo
+- chisq: el estadístico chi cuadrado para una prueba de igualdad
+
+```{r}
+surv_obj = Surv(time = df$time_en_meses,
+                event = df$status)
+
+#Realizamos el test de Log-Rank
+log_rank_test = survdiff(surv_obj ~ sex,
+                          data = df)
+
+p_value = round(1 - pchisq(log_rank_test$chisq, length(log_rank_test$n) - 1), 4)
+```
+La prueba para la diferencia en la supervivencia da un valor de `r p_value`, lo que indica que la supervivencia difiere significativamente por género.
+
+## MODELO DE RIESGOS PROPORCIONALES DE COX {.tabset}
+
+Habitualmente desearemos estudiar la supervivencia de un conjunto de individuos en funcion de covariables X = (X1.....Xp) que pueden afectar a su supervivencia. Por tanto, será necesario establecer modelos estadísticos capaces de analizar dichas relaciones.
+
+La construccion de estos modelos se hace con la función hazard asociada a h(t; X)
+
+El modelo más habitual es el modelo hazard proporcional que separa en dos componentes la función hazard, una correspondiente al tiempo de supervivencia y otra, a las variables predictoras, de la siguiente forma:
+
+$$h(t; X) = h(t)^(X.Beta)$$
+
+
+El modelo semiparamétrico de riesgos proporcionales de Cox utiliza la función coxph()
+
+### REGRESIÓN DE COX UNIVARIABLE
+
+En este caso solo habrá una covariable (variable predictora)
+```{r}
+cox_model = coxph(surv_obj ~ sex,
+                  data = df)
+
+sum_surv = summary(cox_model)
+
+c_index = sum_surv$concordance["C"]
+coef_summary = sum_surv$coefficients
+ci_summary = sum_surv$conf.int
+
+#Creamos el dataframe con la informacion relevante
+summary_df = data.frame(
+  Variable = rownames(coef_summary),
+  Hazard_Ratio = round(coef_summary[, "exp(coef)"], 2),
+  CI_lower = round(ci_summary[, "lower .95"], 2),
+  CI_upper = round(ci_summary[, "upper .95"], 2),
+  Pr_z = round(coef_summary[, "Pr(>|z|)"], 4)
+)
+
+#Aplicamos el estilo condicional a los valores p
+summary_df$Pr_z = cell_spec(summary_df$Pr_z,
+                            "html",
+                            color = ifelse(summary_df$Pr_z < 0.05,
+                                           "#993489",
+                                           "black"))
+
+caption = paste0("Cox Univariable. C Index: ", round(c_index, 2))
+
+k = kable(summary_df,
+          format = "html",
+          booktabs = TRUE,
+          caption = caption,
+          escape = FALSE) %>%
+    kable_styling(latex_options = c("striped", "hold_position", "repeat_header"),
+                  font_size = 12) %>%
+    row_spec(0, background = "#993578", color = "white")
+k
+```
+
+
+El C-index, o índice de concordancia, en el contexto de un modelo de riesgos proporcionales de Cox multivariable, es una medida de la capacidad predictiva del modelo. Este índice varia de 0.5 a 1.0, donde 0.5 indica una capacidad predictiva no mejor que el azar y 1.0 indica una capacidad predictiva perfecta.
+
+La variable sex codificada como (1 = varón; 2 = mujer). El summary da el (HR) para el segundo grupo en relacion con el primer grupo, es decir, mujeres frente a hombres.
+
+1. Hazard Ratio (HR) de 0.59: este valor indica que el grupo definido por sex: 2 tiene un riesgo 41% menor (1-0.59 = 0.41 o 41%) de experimentar el evento de interés en cualquier momento dado, en comparación con el grupo de referencia (sex: 1, asumiento que es asi como se ha codificado). Un HR menor que 1 sugiere un riesgo reducido.
+
+2. Intervalo de confianza (CI) [0.42, 0.82]: este intervalo de confianza del 95% sugiere que estamos bastante seguros de que el verdadero HR está entre 0.42 y 0.82 para la población completa. El hecho de que este intervalo no incluya el 1 refuerza la idea de que la diferencia en el riesgo es estadísticamente significativa.
+
+3. Valor p de 0.0015: este valor p muy bajo indica una fuerte evidencia en contra de la hipótesis nula, que asume que no hay ninguna diferencia en el riesgo entre los dos grupos. En término estadísticos, es muy improbable (menos de una posibilidad en 1000) observar una relación tan fuerte por causalidad si realmente no existiera diferencia alguna.
+
+### REGRESIÓN COX MULTIVARIABLE 
+
+Aqui hay varias covariables en juego, es decir, varias variables predictoras que afectan a la curva de supervivencia
+```{r}
+#Definimos las covariables
+covariables = c("age", "sex", "ph.karno", "ph.ecog", "wt.loss")
+
+#Creamos la cadena de texto con la fórmula
+formula_text = paste("surv_obj ~", paste(covariables, collapse = " + "))
+
+#Covertimos la cadena de texto en una fórmula
+formula_obj = as.formula(formula_text)
+
+#Utilizamos la formula en el modelo de Cox
+cox_model = coxph(formula = formula_obj,
+                  data = df)
+
+sum_surv = summary(cox_model)
+
+c_index = sum_surv$concordance["C"]
+coef_summary = sum_surv$coefficients
+ci_summary = sum_surv$conf.int
+
+#Creamos el dataframe con la informacion relevante
+summary_df = data.frame(
+  Variable = rownames(coef_summary),
+  Hazard_Ratio = round(coef_summary[, "exp(coef)"], 2),
+  CI_lower = round(ci_summary[, "lower .95"], 2),
+  CI_upper = round(ci_summary[, "upper .95"], 2),
+  Pr_z = round(coef_summary[, "Pr(>|z|)"], 4)
+)
+
+#Aplicamos el estilo condicional a los valores p
+summary_df$Pr_z = cell_spec(summary_df$Pr_z,
+                            "html",
+                            color = ifelse(summary_df$Pr_z < 0.05,
+                                           "#993489",
+                                           "black"))
+
+caption = paste0("Cox Multivariable. C Index: ", round(c_index, 2))
+
+k = kable(summary_df,
+          format = "html",
+          booktabs = TRUE,
+          caption = caption,
+          escape = FALSE) %>%
+    kable_styling(latex_options = c("striped", "hold_position", "repeat_header"),
+                  font_size = 12) %>%
+    row_spec(0, background = "#993489", color = "white")
+
+k
+
+```
+
+
+Si tenemos en cuenta lo que explicamos anteriormente, observaremos que la edad es importante, pero sobretodo los ph.ecog, que recordemos que una forma práctica de medir la calidad de vida de un paciente oncológico. Si nos fijamos en el estadío, vemos que conforme el paciente tiene peor calidad de vida, su hazard ratio aumenta consideramente, además de que su p-valor lo respalda.
+
+Para entender mejor el Hazard Ratio, veamoslo que si:
+
+- HR = 1, la covariable no está jugando un papel en la supervivencia. Es decir, ni la aumenta ni la disminuye
+
+- HR < 1, como ocurre en Sex, quiere decir que esta covariable aumenta la probabilidad de supervivencia. En nuestro caso, se está comparando el sexo Femenino y Masculino, y se pone de referencia el del hombre, por eso aparece especificamente SexMujer. Esto quiere decir que, ser mujer, disminuye la probabilidad de muerte en un 0.46 (46%) (1-0.54 = 0.46) respecto al hombre.
+
+- HR > 1, esto quiere decir que la covariable está aumentando el riesgo de morir, en este caso. Es decir, disminuye la probabilidad de supervivencia. Esto podemos ver que ocurre en ph.ecog, que es lo que deciamos al principio.
+
+ph.karmo y wt.loss no las tenemos en cuenta pues sus p-valores aociados son bastante más altos de 0.05, por lo que no son para nada significativos.
+
+
+
+HASTA AQUI LA EXPLICACIÓN, ESPERO QUE HAYA SERVIDO Y CUALQUIER DUDA / COMENTARIO SE AGRADECEN!
+
+## CONTACTO:
+
+**LINKEDIN** --> José Luis Ruiz Moreno
+
+
+**CORREO** --> r.ruizmoreno28@gmail.com
